@@ -18,15 +18,23 @@ Within the scan_ports function, a queue (port_queue) and a list (results) are cr
 
 After creating the worker threads, the script starts each thread by calling t.start(). The target ports are enqueued into the port_queue using port_queue.put(port). The script then waits for all tasks in the port_queue to be completed using port_queue.join(). This ensures that all ports have been processed by the worker threads. To stop the worker threads, None values are enqueued into the port_queue using port_queue.put(None). This signals the worker threads to break the loop and terminate. Finally, the script waits for all worker threads to finish using t.join(). The open ports in the results list are then displayed, or a message indicating no open ports are found is printed based on the results.
 
-
 ## Requirements
 - Python 3
+- Nmap installed on the system
 - Understanding how to run a .py script
 
 ## Installation
-``git clone https://github.com/dragonGR/ScanGuard.git``
-``cd ScanGuard``
-``python3 port_scanner.py``
+``
+git clone https://github.com/dragonGR/ScanGuard.git
+``
+
+``
+cd ScanGuard
+``
+
+``
+python3 port_scanner.py
+``
 
 ## License
 This project is licensed under the [MIT License](LICENSE).

@@ -1,27 +1,21 @@
-import socket
+import nmap
 import concurrent.futures
 import queue
 import threading
+import socket
+import re
 
-def validate_ports(ports):
-    valid_ports = []
-    for port in ports:
-        port = port.strip()
-        if port.isdigit():
-            port = int(port)
-            if 0 <= port <= 65535:
-                valid_ports.append(port)
-    return valid_ports
 
 def port_scan(port, target_host):
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(2)
-            result = sock.connect_ex((target_host, port))
+            result = sock.connect_ex((target_host, int(port)))
             if result == 0:
                 return port
     except socket.error:
         return None
+
 
 def worker(queue, results, target_host):
     while True:
@@ -33,10 +27,17 @@ def worker(queue, results, target_host):
             results.append(result)
         queue.task_done()
 
-def scan_ports(target_host, target_ports):
+
+def scan_ports(target_host, target_ports, num_threads=10):
     try:
-        ip = socket.gethostbyname(target_host)
-        print(f"Scanning target: {target_host} ({ip})")
+        if any(char.isdigit() for char in target_host):
+            if not re.match(r"^http://", target_host):
+                target_host = "http://" + target_host
+        else:
+            if not re.match(r"^https://", target_host):
+                target_host = "https://" + target_host
+
+        print(f"Scanning target: {target_host}")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
             port_queue = queue.Queue()
@@ -74,17 +75,19 @@ def scan_ports(target_host, target_ports):
             else:
                 print("No open ports found based on the provided input.")
 
-    except socket.gaierror:
-        print("Invalid hostname")
+    except nmap.PortScannerError:
+        print("Error occurred while scanning")
     except KeyboardInterrupt:
         print("Port scanning interrupted")
 
-target_host = input("Enter the target host: ")
-target_ports = input("Enter the target ports (comma-separated): ").split(",")
-target_ports = validate_ports(target_ports)
 
-if target_host and target_ports:
-    num_threads = 10  # Adjust the number of threads based on system capabilities
-    scan_ports(target_host, target_ports)
-else:
-    print("Invalid input. Please provide a valid target host and ports.")
+if __name__ == "__main__":
+    target_host = input("Enter the target host: ")
+
+    if target_host:
+        num_threads = 10  # Adjust the number of threads based on system capabilities
+        nm = nmap.PortScanner()
+        target_ports = list(range(1, 65536))  # Scan all ports from 1 to 65535
+        scan_ports(target_host, target_ports)
+    else:
+        print("Invalid input. Please provide a valid target host.")
