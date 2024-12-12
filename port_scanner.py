@@ -3,20 +3,24 @@ import concurrent.futures
 import socket
 import re
 import argparse
+import signal
+import sys
 
 # ANSI escape codes for text formatting
 BOLD_WHITE = '\033[1;97m'
 GREEN = '\033[1;32m'
+RED = '\033[1;31m'
 BLACK = '\033[1;30m'
 RESET = '\033[0m'
 
 class CustomFormatter(logging.Formatter):
     def format(self, record):
         # Set color based on log level
-        level_color = GREEN if record.levelname == "INFO" else RESET
-        
+        level_color = GREEN if record.levelname == "INFO" else RED
+
         # Format the log message with colored level and separators
-        log_fmt = f"{BOLD_WHITE}[%(asctime)s]{RESET} {BLACK}-{RESET} {level_color}%(levelname)s{RESET} {BLACK}-{RESET} %(message)s"
+        log_fmt = (f"{BOLD_WHITE}[%(asctime)s]{RESET} {BLACK}-{RESET} "
+                   f"{level_color}%(levelname)s{RESET} {BLACK}-{RESET} %(message)s")
         formatter = logging.Formatter(log_fmt, datefmt='%Y-%m-%d %H:%M:%S')
         return formatter.format(record)
 
@@ -27,38 +31,58 @@ def port_scan(port, target_host, timeout):
             result = sock.connect_ex((target_host, int(port)))
             if result == 0:
                 return port
-    except socket.error:
-        return None
+    except socket.error as e:
+        logging.debug(f"Socket error for port {port}: {e}")
+    return None
 
 def scan_ports(target_host, target_ports, num_threads=10, timeout=2):
-    # Ensure target_host is in proper format
-    if not re.match(r"^(http://|https://)", target_host):
-        target_host = "http://" + target_host if any(char.isdigit() for char in target_host) else "https://" + target_host
+    try:
+        target_ip = socket.gethostbyname(target_host)
+        logging.info(f"Resolved IP: {target_ip}")
+    except socket.gaierror as e:
+        logging.error(f"Unable to resolve target host: {e}")
+        return
 
-    logging.info(f"Scanning target: {target_host}")
-
-    results = set()  # Use a set for unique results
+    results = set()  # Use a set to avoid duplicate entries
 
     def worker(port):
-        result = port_scan(port, target_host, timeout)
+        result = port_scan(port, target_ip, timeout)
         if result is not None:
             results.add(result)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = [executor.submit(worker, port) for port in target_ports]
+    logging.info(f"Starting scan on target: {target_host} ({target_ip})")
 
-        # Wait for all futures to complete
-        concurrent.futures.wait(futures)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [executor.submit(worker, port) for port in target_ports]
+
+            # Wait for all futures to complete
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logging.debug(f"Error during scan: {e}")
+    except KeyboardInterrupt:
+        logging.info("Exiting...")
+        sys.exit(0)
 
     # Display results
     open_ports = sorted(results)
     if open_ports:
+        logging.info("Open ports found:")
         for port in open_ports:
-            print(f"Port {port} is open")
+            print(f"{GREEN}Port {port} is open{RESET}")
     else:
-        print("No open ports found based on the provided input.")
+        logging.info("No open ports found.")
+
+def handle_exit(signal, frame):
+    logging.info("Exiting...")
+    sys.exit(0)
 
 def main():
+    # Set up signal handler for clean exit
+    signal.signal(signal.SIGINT, handle_exit)
+
     parser = argparse.ArgumentParser(description='Scan ports on a target host.')
     parser.add_argument('target_host', type=str, help='The target host to scan.')
     parser.add_argument('--ports', type=str, default='1-65535', help='Range of ports to scan (default: 1-65535).')
